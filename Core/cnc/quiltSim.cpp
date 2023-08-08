@@ -89,7 +89,7 @@ void simProcessIns(cncInsUn_t *ins)
 {
 	int32_t temp = PLC::read(D2);
 	if (temp >= 9) temp = 8;
-	if (ins->type == insTypes::START_STITCH || ins->type == insTypes::STITCH_INS)
+	if (ins->type == insTypes::START_STITCH || ins->type == insTypes::STITCH_INS || ins->type == insTypes::ZERO_INS)
 		armTimer(vfdSpeedIndexToTimeOut[temp], &nextStateEvt);
 	else if (ins->type == insTypes::START_JUMP || ins->type == insTypes::JUMP_INS)
 	{

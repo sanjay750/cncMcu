@@ -76,22 +76,12 @@ enum io_com_bit_pos
 #define PROTECTION_NPN_PNP		NO_READ
 
 
-
-
-
-
-
-#define UNLOCK_FLAG	(*(__IO uint32_t *)passcheck)
-
-#define IS_UNLOCK()	((UNLOCK_FLAG == 0xABCD) ? (true) :(false))
-
-
-
 enum valveNo
 {
+
 	UPPER_THREAD_LOOSE_VALVE = 1,
-	LOWER_THREAD_LOOSE_VALVE,
-	THREAD_CUT_VALVE,
+	LOWER_THREAD_LOOSE_VALVE = 2,
+	THREAD_CUT_VALVE = 4,
 };
 
 
@@ -219,8 +209,6 @@ enum insTypes
 
 static const char* insName[] =
 {
-
-
 "NONE_INS",
 "ZERO_INS",
 "STITCH_INS",
@@ -228,7 +216,6 @@ static const char* insName[] =
 "SET_VALVE_INS",
 "PRINT_INS",
 "STOP_INS",
-
 };
 
 typedef struct
@@ -274,6 +261,13 @@ typedef struct
 	unsigned int id;
 }cncIns_t;
 
+enum action_t{
+	ACTION_NONE = 0,
+	ACTION_SET = 1,
+	ACTION_RESET = 2,
+	ACTION_TOGGLE = 3,
+};
+
 typedef struct
 {
 	unsigned char type;
@@ -293,21 +287,6 @@ typedef union
 	setValveIns_t valveIns;
 
 }cncInsUn_t;
-
-
-#define bit_(n) (1<<n)
-
-#define MOVE_X_BIT		bit_(0)
-#define MOVE_XD_BIT		bit_(1)
-#define MOVE_Y_BIT		bit_(2)
-#define MOVE_YD_BIT		bit_(3)
-
-#define NEDDLE_TOP_BIT	bit_(4)
-#define NEDDLE_DOWN_BIT bit_(5)
-#define LOOP_BIT		bit_(6)
-
-
-extern uint32_t cncCtrlReg;
 
 
 
@@ -335,6 +314,7 @@ void stopVfd();
 
 
 unsigned char isValveSet(unsigned char valve);
+void executeValveIns(setValveIns_t ins);
 void writeValves(uint8_t valveMask);
 void setValve(unsigned char valve);
 void resetValve(unsigned char valve);
@@ -360,33 +340,36 @@ unsigned char readSpeedSensor();
 
 void cncButtonAndSigHandler();
 
-uint32_t unlockDevice(const char *pass);
 
+// manual servo move ---------------------------------------
 void moveServoContStart(int x, int y);
 void moveServoContStop();
-int moveSerovCont();
+int moveSerovContinuous();
 
+// check if servo is paused ---------------------------------------------
 uint8_t xServoPaused();
 uint8_t yServoPaused();
 uint8_t xyHelperPaused();
 
+// get sensor reg value ------------------------------------------------------
 uint32_t getComIOBits();
+
+// stitch instruction function ------------------------------------------------------
 int getStopingSteps();
 int makeStitch(stitchIns_t *ins);
 int servoTrigger();
 
+// jump instruction functions --------------------------------------------------------
 void makeJump(jumpIns_t *ins);
 void terminateJump();
 void helperTigger();
 
+
 int moveServo(int32_t x, int32_t y, uint32_t stepTime, uint8_t Trig);
-
-
-
 void eventGeneratorTask(void *argument);
-
 void onChangeComSender();
 
+// timer functions meant to be used in state machine
 void armTimer(uint32_t delay, const void *ev);
 void disArmTimer();
 void timeOutHandler();

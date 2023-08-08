@@ -1156,11 +1156,13 @@ QState cncState_valve(cncState * const me, QEvt const * const e) {
                 /*${CNC::cncState::SM::valve::Q_INIT::[peak]::[tIns.type==SET_VALVE_INS]} */
                 if (tIns.type == SET_VALVE_INS) {
                     getNextIns(&tIns);
-                    writeValves(tIns.valveIns.valve);
+
+                    executeValveIns(tIns.valveIns);
 
                     /*${CNC::cncState::SM::valve::Q_INIT::[peak]::[tIns.type==SET_~::[tIns.valveIns.delay>0]} */
                     if (tIns.valveIns.delay > 0) {
                         armTimer(tIns.valveIns.delay, (void*)&nextStateEvt);
+                        printF("delay=%u, m=%x\n", tIns.valveIns.delay, tIns.valveIns.valve);
                         status_ = Q_HANDLED();
                     }
                     /*${CNC::cncState::SM::valve::Q_INIT::[peak]::[tIns.type==SET_~::[tIns.valveIns.delay==0]} */
@@ -1653,7 +1655,7 @@ QState cncState_moveServo(cncState * const me, QEvt const * const e) {
     switch (e->sig) {
         /*${CNC::cncState::SM::moveServo::HELPER_EVENT} */
         case HELPER_EVENT_SIG: {
-            int cont = moveSerovCont();
+            int cont = moveSerovContinuous();
             /*${CNC::cncState::SM::moveServo::HELPER_EVENT::[!cont]} */
             if (!cont) {
                 terminateJump();
@@ -1671,7 +1673,7 @@ QState cncState_moveServo(cncState * const me, QEvt const * const e) {
 
             for (i = 0; i < 3; i++)
             {
-                if (moveSerovCont() == 0)
+                if (moveSerovContinuous() == 0)
                 {
                     if (i > 1)
                     {

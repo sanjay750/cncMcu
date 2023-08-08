@@ -31,76 +31,6 @@
 #include "serialComHandler.h"
 #include "PLC.h"
 
-const char passward[256] = "isha textile 112";
-const char devideID[256] = "ISHA1234";
-
-
-const char passcheck[0x800] __attribute__ ((aligned (0x800)))  = "pqwe";
-
-
-const unsigned char StitchInsIndexs[] =
-{
-	(uint32_t)&((stitchIns_t*)0)->type,
-	(uint32_t)&((stitchIns_t*)0)->id,
-	(uint32_t)&((stitchIns_t*)0)->xStep,
-	(uint32_t)&((stitchIns_t*)0)->yStep,
-	(uint32_t)&((stitchIns_t*)0)->stepTime,
-};
-
-const unsigned char StitchInsSizes[] =
-{
-	sizeof(stitchIns_t::type),
-	sizeof(stitchIns_t::id),
-	sizeof(stitchIns_t::xStep),
-	sizeof(stitchIns_t::yStep),
-	sizeof(stitchIns_t::stepTime),
-};
-
-const unsigned char ZeroInsIndexs[] =
-{
-	(uint32_t)&((zeroIns_t*)0)->type,
-	(uint32_t)&((zeroIns_t*)0)->id,
-	(uint32_t)&((zeroIns_t*)0)->xStep,
-	(uint32_t)&((zeroIns_t*)0)->yStep,
-	(uint32_t)&((zeroIns_t*)0)->stepTime,
-};
-
-const unsigned char ZeroInsSizes[] =
-{
-	sizeof(zeroIns_t::type),
-	sizeof(zeroIns_t::id),
-	sizeof(zeroIns_t::xStep),
-	sizeof(zeroIns_t::yStep),
-	sizeof(zeroIns_t::stepTime),
-};
-
-const unsigned char JumpInsIndexs[] =
-{
-	(uint32_t)&((jumpIns_t*)0)->type,
-	(uint32_t)&((jumpIns_t*)0)->id,
-	(uint32_t)&((jumpIns_t*)0)->valveMask,
-	(uint32_t)&((jumpIns_t*)0)->xStep,
-	(uint32_t)&((jumpIns_t*)0)->yStep,
-	(uint32_t)&((jumpIns_t*)0)->stepTime,
-};
-
-const unsigned char JumpInsSizes[] =
-{
-	sizeof(jumpIns_t::type),
-	sizeof(jumpIns_t::id),
-	sizeof(jumpIns_t::valveMask),
-	sizeof(jumpIns_t::xStep),
-	sizeof(jumpIns_t::yStep),
-	sizeof(jumpIns_t::stepTime),
-};
-
-uint32_t cncCtrlReg, resCtrlReg;
-
-
-
-
-int cncConfIOhandler (serialComHandler_t* com, uint8_t *data, unsigned int len);
-int secIOhandler(serialComHandler_t* com, uint8_t *data, unsigned int len);
 
 
 uint32_t eventGeneratorTaskBuffer[ 256 ];
@@ -132,7 +62,7 @@ const QEvt stopEvt = {.sig = STOP_SIG,};
 machineTestEvt_t testEvt = {};
 
 
-
+uint8_t vfdRunSpeedLim = 16;
 uint8_t vfdRunSpeed = 2;
 uint8_t vfdStopSpeed = 1;
 
@@ -149,8 +79,10 @@ const QEvt ctrlRegChange = {.sig = CTRL_REG_SIG,};
 SemaphoreHandle_t plcIoSemaphore = NULL;
 StaticSemaphore_t plcIoMutexBuffer;
 
-void setVfdRunnignSpeed(uint8_t sp)
-{
+static uint8_t quiltCommand = 0;
+
+
+void setVfdRunnignSpeed(uint8_t sp) {
 	vfdRunSpeed = sp;
 }
 
@@ -159,8 +91,6 @@ void servoTask(void *args);
 void servoInit(const char *name, servoHandler_t*srv, void* ser)
 {
 	srv->ser = ser;
-
-
 
     srv->servoQueueHandler = xQueueCreateStatic(
     		8,
@@ -187,7 +117,6 @@ void resetServoTask()
 	yServoReset();
 	resetServoHelper();
 
-
 	xServoHandler.ser = &xServo;
 	xServoHandler.taskHandle = xTaskCreateStatic(&servoTask, "xServoTask", 256, &xServoHandler, osPriorityHigh, xServoHandler.stackBuf, &xServoHandler.servoTask);
 
@@ -198,45 +127,6 @@ void resetServoTask()
 
 }
 
-
-uint32_t unlockDevice(const char *pass)
-{
-	if (IS_UNLOCK())
-		return 2;
-
-	if (strcmp(passward, pass) == 0)
-	{
-
-		FLASH_EraseInitTypeDef ers;
-		HAL_FLASH_Unlock();
-
-		ers.TypeErase = FLASH_TYPEERASE_PAGES;
-		ers.PageAddress = (uint32_t)&UNLOCK_FLAG;
-		ers.NbPages = 1;
-
-		uint32_t ferr;
-
-		if (HAL_FLASHEx_Erase(&ers, &ferr))
-		{
-			HAL_FLASH_Lock();
-			return 0;
-		}
-
-		if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t)&UNLOCK_FLAG, 0xABCD))
-		{
-			HAL_FLASH_Lock();
-			return 0;
-		}
-
-		HAL_FLASH_Lock();
-
-
-
-		return 0xABCD;
-	}
-
-	return 0xEEEE;
-}
 
 
 void cncInit()
@@ -253,9 +143,6 @@ void cncInit()
 	plcIoSemaphore = xSemaphoreCreateBinaryStatic( &plcIoMutexBuffer );
 	xSemaphoreGive(plcIoSemaphore);
 
-
-
-
 	servoInit("xServoTask", &xServoHandler, &xServo);
 	servoInit("yServoTask", &yServoHandler, &yServo);
 
@@ -267,11 +154,6 @@ void cncInit()
 
 
 
-static uint32_t resSensorVal = 0;
-static uint32_t refChange;
-static uint8_t sendSneValue = 0;
-
-static uint8_t quiltCommand = 0;
 
 
 
@@ -300,190 +182,6 @@ uint32_t getComIOBits()
 
 
 
-int secIOhandler(serialComHandler_t* com, uint8_t *data, unsigned int len)
-{
-	uint8_t i = 0;
-	uint32_t val;
-	switch(data[0])
-	{
-	case 'U':
-		val = unlockDevice((char*)&data[1]);
-		com->writeAckPayload((uint8_t*)&val, 4);
-		i = 4;
-		break;
-
-	case 'G':
-		val = 0;
-		if(IS_UNLOCK())
-			val = 0xABCD;
-		com->writeAckPayload((uint8_t*)&val, 4);
-		i = 4;
-		break;
-
-	case 'I':
-		i = strlen(devideID) + 1;
-		com->writeAckPayload((uint8_t*)devideID, i);
-		break;
-	}
-
-	return i;
-}
-
-int cncConfIOhandler (serialComHandler_t* com, uint8_t *data, unsigned int len)
-{
-	uint8_t i = 0;
-	uint32_t val;
-	int32_t  ival;
-	switch(data[0])
-	{
-	case '~':
-		testEvt.ev.sig = IO_TEST_MODE_SIG;
-		postEvent(&testEvt);
-
-		val = getComIOBits();
-		com->respPayload[0] = 'I';
-		cast(uint32_t, com->respPayload[1]) = val;
-		com->respLen = i = 5;
-		break;
-
-	case '>':
-		testEvt.ev.sig = EXIT_TEST_STATE_SIG;
-		postEvent(&testEvt);
-		com->writeAckPayload((uint8_t*)">", sizeof(">"));
-		i = sizeof(">");
-		break;
-
-	case 'V':
-
-		val = data[1];
-		if (val < 15)
-			vfdRunSpeed = val;
-		printF("vfd running speed:%d\n", vfdRunSpeed);
-		i = 0;
-		break;
-
-	case 'U':
-		val = unlockDevice((char*)&data[1]);
-		com->writeAckPayload((uint8_t*)&val, 4);
-		i = 4;
-		break;
-
-	case 'I':
-
-		val = getComIOBits();
-
-
-		com->respPayload[0] = 'I';
-		cast(uint32_t, com->respPayload[1]) = val;
-		com->respLen = i = 5;
-		break;
-
-	case 'O':
-		switch(data[1])
-		{
-		case OUTPUT_TEST_QUILT_EVT:
-			testEvt.ev.sig = QUILT_TEST_SIG;
-			postEvent(&testEvt);
-			break;
-		case OUTPUT_SET_BREAK_EVT:
-			testEvt.ev.sig = SET_BREAK_COM_SIG;
-			postEvent(&testEvt);
-			break;
-		case OUTPUT_RESET_BREAK_EVT:
-			testEvt.ev.sig = RESET_BREAK_COM_SIG;
-			postEvent(&testEvt);
-			break;
-
-		case OUTPUT_TOGGLE_BREAK_EVT:
-			testEvt.ev.sig = TOGGLE_BREAK_COM_SIG;
-			postEvent(&testEvt);
-			break;
-
-
-
-		case OUTPUT_SET_VALVE_EVT:
-			testEvt.ev.sig = SET_VALVE_COM_SIG;
-			testEvt.valve = data[2];
-			postEvent(&testEvt);
-			break;
-
-
-
-		case OUTPUT_RESET_VALVE_EVT:
-			testEvt.ev.sig = RESET_VALVE_COM_SIG;
-			testEvt.valve = data[2];
-			postEvent(&testEvt);
-			break;
-
-		}
-
-		com->respPayload[0] = 'O';
-		com->respLen = i = 1;
-
-		break;
-
-	case 'T':
-		switch(data[1])
-		{
-		case OUTPUT_X_STEP:
-			ival = atoi((char*)&data[2]);
-
-			testEvt.ev.sig = TEST_SERVO_SIG;
-			testEvt.testType = 'x';
-			testEvt.steps.stepCount = ival;
-			testEvt.steps.stepTime = 31000*abs(ival);
-
-			postEvent(&testEvt);
-			break;
-
-		case OUTPUT_Y_STEP:
-			ival = atoi((char*)&data[2]);
-
-			testEvt.ev.sig = TEST_SERVO_SIG;
-			testEvt.testType = 'y';
-			testEvt.steps.stepCount = ival;
-			testEvt.steps.stepTime = 31000*abs(ival);
-
-			postEvent(&testEvt);
-			break;
-
-		case OUTPUT_NEEDLE_LOOP_COM:
-			testEvt.ev.sig = SET_LOOP_POS_SIG;
-			postEvent(&testEvt);
-			break;
-
-		case OUTPUT_NEEDLE_UP_POS_COM:
-			testEvt.ev.sig = SET_NEEDLE_TOP_POS_SIG;
-			postEvent(&testEvt);
-			break;
-		case OUTPUT_NEEDLE_DOWN_POS_COM:
-			testEvt.ev.sig = SET_NEEDLE_DOWN_POS_SIG;
-			postEvent(&testEvt);
-			break;
-		}
-
-
-
-		com->respPayload[0] = 'T';
-		com->respLen = i = 1;
-		break;
-
-		case OUTPUT_TEST_MODE_COM:
-			testEvt.ev.sig = IO_TEST_MODE_SIG;
-			postEvent(&testEvt);
-			break;
-
-		case OUTPUT_TEST_MODE_EXIT_COM:
-			testEvt.ev.sig = TEST_DONE_SIG;
-			postEvent(&testEvt);
-			break;
-
-
-
-	}
-	return i;
-}
-
 
 unsigned char isBreakSet()
 {
@@ -494,10 +192,12 @@ unsigned char isBreakSet()
 
 void RsetBreak()
 {
+	print("set break\n");
 	PLC::write(TEST_BREAK, R_CLOSE);
 }
 void RresetBreak()
 {
+	print("reset break\n");
 	PLC::write(TEST_BREAK, R_OPEN);
 }
 
@@ -511,6 +211,7 @@ void setBreak()
 	stopVfd();
 	PLC::write(MEG_BREAK, R_CLOSE);
 }
+
 void resetBreak()
 {
 	PLC::write(MEG_BREAK, R_OPEN);
@@ -561,13 +262,34 @@ unsigned char isValveSet(unsigned char valve)
 	return 0;
 }
 
-void writeValves(uint8_t valveMask)
-{
-	PLC::write(UPPER_THREAD_VALVE,  (valveMask & (1 << UPPER_THREAD_LOOSE_VALVE))?(R_CLOSE):(R_OPEN));
-	PLC::write(LOWER_THREAD_VALVE,  (valveMask & (1 << LOWER_THREAD_LOOSE_VALVE))?(R_CLOSE):(R_OPEN));
-	PLC::write(LOOPER_VALVE,  (valveMask & (1 << THREAD_CUT_VALVE))?(R_CLOSE):(R_OPEN));
+void executeValveIns(setValveIns_t ins){
+	if (ins.type != insTypes::SET_VALVE_INS)
+		return;
+
+	if (ins.action == ACTION_SET) {
+		if (ins.valve & (UPPER_THREAD_LOOSE_VALVE)) PLC::write(UPPER_THREAD_VALVE, R_CLOSE);
+		if (ins.valve & (LOWER_THREAD_LOOSE_VALVE)) PLC::write(LOWER_THREAD_VALVE, R_CLOSE);
+		if (ins.valve & (THREAD_CUT_VALVE)) PLC::write(LOOPER_VALVE, R_CLOSE);
+	}
+	else if (ins.action == ACTION_RESET) {
+		if (ins.valve & (UPPER_THREAD_LOOSE_VALVE)) PLC::write(UPPER_THREAD_VALVE, R_OPEN);
+		if (ins.valve & (LOWER_THREAD_LOOSE_VALVE)) PLC::write(LOWER_THREAD_VALVE, R_OPEN);
+		if (ins.valve & (THREAD_CUT_VALVE)) PLC::write(LOOPER_VALVE, R_OPEN);
+	}
+	else if (ins.action == ACTION_SET) {
+		if (ins.valve & (UPPER_THREAD_LOOSE_VALVE)) PLC::write(UPPER_THREAD_VALVE, R_TOGGLE);
+		if (ins.valve & (LOWER_THREAD_LOOSE_VALVE)) PLC::write(LOWER_THREAD_VALVE, R_TOGGLE);
+		if (ins.valve & (THREAD_CUT_VALVE)) PLC::write(LOOPER_VALVE, R_TOGGLE);
+	}
+
 }
 
+void writeValves(uint8_t valveMask)
+{
+	PLC::write(UPPER_THREAD_VALVE,  (valveMask & (UPPER_THREAD_LOOSE_VALVE))?(R_CLOSE):(R_OPEN));
+	PLC::write(LOWER_THREAD_VALVE,  (valveMask & (LOWER_THREAD_LOOSE_VALVE))?(R_CLOSE):(R_OPEN));
+	PLC::write(LOOPER_VALVE,  (valveMask & (THREAD_CUT_VALVE))?(R_CLOSE):(R_OPEN));
+}
 
 void setValve(unsigned char valve)
 {
@@ -604,6 +326,7 @@ void resetValve(unsigned char valve)
 			break;
 	}
 }
+
 void toggleValve(unsigned char valve)
 {
 
@@ -820,7 +543,6 @@ else
 	write(NEEDLE_DOWN, R_OPEN);
 	write(NEEDLE_LOOP, R_OPEN);
 	write(TEST_BREAK, read(MEG_BREAK));
-
 }
 
 	xSemaphoreGive(plcIoSemaphore);
@@ -1134,8 +856,7 @@ int makeStitch(stitchIns_t *ins)
 static uint8_t valveCommandArray[8];
 static uint8_t valveCommandIndexHead, valveCommandIndexTail;
 
-void accJumpValve()
-{
+void accJumpValve() {
 	writeValves(valveCommandArray[valveCommandIndexTail++]);
 }
 
@@ -1144,23 +865,21 @@ uint8_t servoMoveRunning;
 
 const QEvt moveServoEvt = {.sig = MOVE_SEROV_SIG,};
 
-void moveServoContStart(int x, int y)
-{
+void moveServoContStart(int x, int y) {
 	xmovecontSteps = x;
 	ymovecontSteps = y;
 	servoMoveRunning = 1;
 	QActive_post_(&cncStateMachine.super, &moveServoEvt, QF_NO_MARGIN, 0);
 }
 
-void moveServoContStop()
-{
+void moveServoContStop() {
 	xmovecontSteps = 0;
 	ymovecontSteps = 0;
 	servoMoveRunning = 0;
 }
 
-int moveSerovCont()
-{
+int moveSerovContinuous() {
+
 	if (!servoMoveRunning)
 		return 0;
 	servoStepsUn_t Sx, Sy;
@@ -1185,9 +904,7 @@ int moveSerovCont()
 
 
 
-void makeJump(jumpIns_t *ins)
-{
-
+void makeJump(jumpIns_t *ins) {
 
 	servoStepsUn_t x, y;
 
@@ -1214,8 +931,7 @@ void makeJump(jumpIns_t *ins)
 
 }
 
-void terminateJump()
-{
+void terminateJump() {
 	servoStepsUn_t x, y;
 
 	x.type = SERVO_QUANT_PAUSE;
@@ -1233,47 +949,36 @@ void terminateJump()
 }
 
 
-void helperTigger()
-{
+void helperTigger() {
 	xyServoHelper.trigger(&xyServoHelper);
 }
 
 
-uint8_t xServoPaused()
-{
+uint8_t xServoPaused() {
 	return xServo.isServoPaused();
 }
-uint8_t yServoPaused()
-{
+uint8_t yServoPaused() {
 	return yServo.isServoPaused();
 }
-uint8_t xyHelperPaused()
-{
+uint8_t xyHelperPaused() {
 	return xyServoHelper.isHelperPaused();
 }
 
-void eventGeneratorTask(void *argument)
-{
-
+void eventGeneratorTask(void *argument) {
 	helperEvt_t ev;
-
 	print("helper online\n");
 
-	for(;;)
-	{
+	for(;;) {
 
 		if (osMessageQueueGet(eventGeneratorQueue, &ev, 0, portMAX_DELAY) != osOK)
 			continue;
 
-		if (ev.type == HALPER_GEN_EV)
-		{
+		if (ev.type == HALPER_GEN_EV) {
 			xyServoHelper.writeEventTime(ev.time, send_ev);
 		}
-		else if (ev.type == HALPER_PAUSE_EV)
-		{
+		else if (ev.type == HALPER_PAUSE_EV) {
 			xyServoHelper.writeEventTime(ev.time, event_EP_ch);
 		}
-
 	}
 }
 

@@ -100,6 +100,10 @@ void setQueueFlags();
 void getInsStr(cncInsUn_t *ins, char *buf);
 
 
+uint32_t unlockDevice(const char *pass);
+
+
+
 #ifdef __cplusplus
 }
 #endif

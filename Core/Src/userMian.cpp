@@ -37,7 +37,7 @@
 
 #include "quiltSim.h"
 
-
+#include "seeprom.h"
 
 extern cncState cncStateMachine;
 
@@ -218,6 +218,11 @@ extern servoHandler_t yServoHandler;
 extern TaskHandle_t eventGeneratorTaskHand;
 extern osMessageQueueId_t eventGeneratorQueue;
 
+const char passcheck__[256]  __attribute__((section(".seeprom"))) = "passcheck\n";
+char tempBuf[256];
+const int eeprom_int __attribute__((section(".seeprom"))) = 123;
+
+int eeprom_int__ = 0;
 extern "C" void userMainThread(void *arg)
 {
 
@@ -235,13 +240,18 @@ extern "C" void userMainThread(void *arg)
 	startStateMachine();
 
 
-	osDelay(2000);
-	
+	PLC::write(Y11, R_CLOSE);
+	osDelay(100);
+	PLC::write(Y11, R_OPEN);
+	osDelay(100);
+	PLC::write(Y11, R_CLOSE);
+	osDelay(100);
+	PLC::write(Y11, R_OPEN);
+	osDelay(2000-3*100);
+
 	xSemaphore = xSemaphoreCreateBinaryStatic( &xMutexBuffer );
 
 	xSemaphoreGive(xSemaphore);
-
-
 
     for(;;)
     {
@@ -256,9 +266,12 @@ extern "C" void userMainThread(void *arg)
 
     	QUILT_SIM::checkForStartSig();
 
-    	if (HAL_GetTick() - refDelay >= 3000)
+    	if (HAL_GetTick() - refDelay >= 1000)
     	{
+    		if (PLC::read(CNC_IDEL_STATE) == R_CLOSE) {
 
+    			PLC::write(Y11, R_TOGGLE);
+    		}
     		refDelay = HAL_GetTick();
     	}
 

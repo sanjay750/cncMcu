@@ -235,7 +235,7 @@ typedef enum
 	D1, //resExecutedInsIdPD (read only)
 	D2, //vfd speed request
 	D3, //vfd speed (read only)
-	D4,
+	D4, //vfd speed lim
 
 	D5, //yServo ODO meter L
 	D6, //yServo ODO meter H
